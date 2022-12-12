@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  @package   FilterMagic
+  ~  @copyright Copyright (c)2022 Nicholas K. Dionysopoulos
+  ~  @license   GNU General Public License version 3, or later
+  -->
+
+<extension type="plugin" group="system" method="update">
+    <name>plg_system_filtermagic</name>
+    <version>1.0.0</version>
+    <creationDate>2022-12-12</creationDate>
+    <author>Nicholas K. Dionysopoulos</author>
+    <authorEmail>nicholas@dionysopoulos.me</authorEmail>
+    <authorUrl>https://www.dionysopoulos.me</authorUrl>
+    <copyright>Copyright (c)2022 Nicholas K. Dionysopoulos</copyright>
+    <license>GNU GPL v3 or later</license>
+    <description>PLG_SYSTEM_FILTERMAGIC_DESCRIPTION</description>
+    <namespace path="src">Dionysopoulos\Plugin\System\FilterMagic</namespace>
+
+    <files>
+        <folder>services</folder>
+        <folder plugin="filtermagic">src</folder>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_system_filtermagic.sys.ini</language>
+        <language tag="en-GB">en-GB/plg_system_filtermagic.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params" addfieldprefix="Dionysopoulos\Plugin\System\FilterMagic\Field">
+            <fieldset name="basic"
+                      label="PLG_SYSTEM_FILTERMAGIC_GROUP_BASIC_LABEL"
+                      description="PLG_SYSTEM_FILTERMAGIC_GROUP_BASIC_DESCRIPTION">
+                <!-- TODO -->
+            </fieldset>
+        </fields>
+    </config>
+</extension>
