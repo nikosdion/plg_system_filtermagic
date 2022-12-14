@@ -285,7 +285,7 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 		$input  = $this->getApplication()->input;
 		$option = $input->getCmd('option');
 		$view   = $input->getCmd('view');
-		$format = $input->getCmd('format');
+		$format = $input->getCmd('format', 'html');
 
 		if (
 			$option !== 'com_content'
