@@ -204,8 +204,8 @@ The filter form is rendered through the `onContentAfterTitle` event. As a result
 
 The form rendering takes place through two Joomla layouts called `filtermagic.form` and `filtermagic.form.fields`. The former renders the outermost part of the forms and its submit button. The latter renders the individual fields. You can override these files in your template:
 
-- templates/YOUR_TEMPLATE/html/layout/filtermagic/form.php
-- templates/YOUR_TEMPLATE/html/layout/filtermagic/form/fields.php
+- templates/YOUR_TEMPLATE/html/layouts/filtermagic/form.php
+- templates/YOUR_TEMPLATE/html/layouts/filtermagic/form/fields.php
 
 You cannot have different filter layouts per category.
 

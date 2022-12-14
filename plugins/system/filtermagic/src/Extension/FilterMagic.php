@@ -9,6 +9,7 @@ namespace Dionysopoulos\Plugin\System\FilterMagic\Extension;
 
 defined('_JEXEC') || die;
 
+use Dionysopoulos\Plugin\System\FilterMagic\Helper\LayoutHelper;
 use DOMElement;
 use JetBrains\PhpStorm\ArrayShape;
 use Joomla\CMS\Application\SiteApplication;
@@ -18,7 +19,6 @@ use Joomla\CMS\Form\Form;
 use Joomla\CMS\Form\FormField;
 use Joomla\CMS\Form\FormHelper;
 use Joomla\CMS\HTML\Registry;
-use Joomla\CMS\Layout\LayoutHelper;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Component\Content\Site\Model\ArticlesModel;
 use Joomla\Component\Content\Site\Model\CategoryModel;
