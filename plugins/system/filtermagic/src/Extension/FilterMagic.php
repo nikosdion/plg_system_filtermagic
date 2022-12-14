@@ -401,7 +401,7 @@ PHP
 			);
 
 			// Remove unresolvable fields
-			array_filter($subFields);
+			$subFields = array_filter($subFields);
 
 			// Mark the new fields for adding to the list
 			foreach ($subFields as $f)
