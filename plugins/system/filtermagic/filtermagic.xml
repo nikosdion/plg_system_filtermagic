@@ -18,6 +18,8 @@
     <namespace path="src">Dionysopoulos\Plugin\System\FilterMagic</namespace>
 
     <files>
+        <folder>filters</folder>
+        <folder>layout</folder>
         <folder>services</folder>
         <folder plugin="filtermagic">src</folder>
     </files>
