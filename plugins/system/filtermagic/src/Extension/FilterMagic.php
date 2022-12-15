@@ -22,8 +22,11 @@ use Joomla\CMS\HTML\Registry;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Component\Content\Site\Model\ArticlesModel;
 use Joomla\Component\Content\Site\Model\CategoryModel;
+use Joomla\Component\Content\Site\Service\Category;
 use Joomla\Component\Fields\Administrator\Helper\FieldsHelper;
 use Joomla\Database\DatabaseAwareTrait;
+use Joomla\Database\Query\QueryElement;
+use Joomla\Database\QueryInterface;
 use Joomla\Event\Event;
 use Joomla\Event\SubscriberInterface;
 use Joomla\Utilities\ArrayHelper;
@@ -58,19 +61,14 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 	 *
 	 * This is called directly by the CategoryModel after we hot-patch it in memory.
 	 *
-	 * @param   object  $articlesModel  The ArticlesModel instance created by the CategoryModel
-	 * @param   object  $categoryModel  The CategoryModel initiating the articles fetch
+	 * @param   ArticlesModel  $articlesModel  The ArticlesModel instance created by the CategoryModel
+	 * @param   CategoryModel  $categoryModel  The CategoryModel initiating the articles fetch
 	 *
 	 * @since        1.0.0
 	 * @noinspection PhpUnused
 	 */
-	public function handleModel($articlesModel, $categoryModel)
+	public function handleModel(ArticlesModel $articlesModel, CategoryModel $categoryModel)
 	{
-		if (!$articlesModel instanceof ArticlesModel || !$categoryModel instanceof CategoryModel)
-		{
-			return;
-		}
-
 		$category = $categoryModel->getCategory();
 
 		if (!$category instanceof CategoryNode)
@@ -120,16 +118,7 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 
 		if (!empty($subCatId))
 		{
-			if (!is_array($subCatId))
-			{
-				$query->where($db->quoteName('catid') . ' = :catid')
-					->bind(':catid', $subCatId);
-			}
-			else
-			{
-				$subCatId = ArrayHelper::toInteger($subCatId);
-				$query->whereIn($db->quoteName('catid'), $subCatId);
-			}
+			$this->filterBySubcategory($query, $subCatId);
 		}
 
 		// -- Filter by tag
@@ -137,19 +126,7 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 
 		if (!empty($tags))
 		{
-			$tags = is_array($tags) ? $tags : explode(',', $tags);
-			$tags = ArrayHelper::toInteger($tags);
-
-			// Unfortunately, you cannot use whereIn in subqueries, so we have to fake it. Boo.
-			$tags = implode(',', array_map([$db, 'quote'], $tags));
-
-			$subQuery = $db->getQuery(true)
-				->select('1')
-				->from($db->quoteName('#__contentitem_tag_map', 't'))
-				->where($db->quoteName('t.type_alias') . ' = ' . $db->quote('com_content.article'))
-				->where($db->quoteName('t.tag_id') . ' IN(' . $tags . ')')
-				->where($db->quoteName('t.content_item_id') . ' = ' . $db->quoteName('c.id'));
-			$query->where('EXISTS(' . $subQuery . ')');
+			$this->filterByTag($tags, $query);
 		}
 
 		// Filter by custom fields. You are not expected to understand this.
@@ -162,55 +139,15 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 				continue;
 			}
 
-			$value    = $filters[$field->name];
-			$value    = is_array($value) ? $value : [$value];
-			$tableKey = 'fv' . $field->id;
-			$fieldId  = isset($field->parent_field_id) && !empty($field->parent_field_id)
-				? $field->parent_field_id
-				: $field->id;
+			$value = $filters[$field->name];
+			$value = is_array($value) ? $value : [$value];
+			$this->filterByCustomField($field, $value, $query);
+		}
 
-			$subQuery = $db->getQuery(true)
-				->select('1')
-				->from($db->quoteName('#__fields_values', $tableKey))
-				->where($db->quoteName('c.id') . ' = ' . $db->quoteName($tableKey . '.item_id'))
-				->where($db->quoteName($tableKey . '.field_id') . ' = ' . $db->quote($fieldId));
-
-			if (isset($field->parent_field_id) && !empty($field->parent_field_id))
-			{
-				/**
-				 * Subform field. look for "field123":"value"
-				 *
-				 * In case of multiple values we need to apply inclusive disjunction (OR) across all constituent values.
-				 * Since the LIKE operator does not have an inclusive disjunction form (in the way that the equals
-				 * operator has that in the form of IN) we have to use extendWhere() with its third parameter set to OR.
-				 *
-				 * Externally, the value clause is conjunctive (AND) to the rest of the conditions, hence the use of
-				 * 'AND' as the first argument to extendWhere().
-				 */
-				$conditions = array_map(
-					fn($wrappedvalue) => $db->quoteName($tableKey . '.value') . ' LIKE ' . $db->quote($wrappedvalue),
-					array_map(
-						fn($v) => '%' . trim(json_encode(['field' . $field->id => $v]), '{}') . '%',
-						$value
-					)
-				);
-
-				$subQuery->extendWhere('AND', $conditions, 'OR');
-			}
-			else
-			{
-				/**
-				 * Whole field value.
-				 *
-				 * The condition is externally conjunctive and internally inclusively disjunctive. We use IN() to
-				 * denote inclusive disjunction instead of multiple WHERE clauses for better performance. Externally,
-				 * where() uses the 'AND' operator making it conjunctive.
-				 */
-				$value = array_map([$db, 'quote'], $value);
-				$subQuery->where($db->quoteName($tableKey . '.value') . ' IN(' . implode(',', $value) . ')');
-			}
-
-			$query->where('EXISTS(' . $subQuery . ')');
+		// If I did not create a WHERE in my query bail out.
+		if (!($query->where instanceof QueryElement) || count($query->where->getElements()) === 0)
+		{
+			return;
 		}
 
 		// Find article IDs which match the filters
@@ -635,7 +572,7 @@ PHP
 			foreach ($options as $optionDefinition)
 			{
 				[$value, $label] = $optionDefinition;
-				$option = $domNode->appendChild(new DOMElement('option'));
+				$option              = $domNode->appendChild(new DOMElement('option'));
 				$option->textContent = $label;
 				$option->setAttribute('value', $value);
 			}
@@ -677,10 +614,194 @@ PHP
 		{
 			$ret['options'][] = [
 				(string) $option['value'],
-				(string) $option
+				(string) $option,
 			];
 		}
 
 		return $ret;
+	}
+
+	/**
+	 * Apply subcategory filtering
+	 *
+	 * @param   QueryInterface  $query     The query to apply the filtering on
+	 * @param   int|array       $subCatId  The subcategory ID
+	 *
+	 * @return  void
+	 * @since   1.0.0
+	 */
+	private function filterBySubcategory(QueryInterface $query, int|array $subCatId): void
+	{
+		$db     = $this->getDatabase();
+		$strict = $this->params->get('category_strict', 1);
+
+		// Single category, strict filtering
+		if (!is_array($subCatId) && $strict)
+		{
+			$query->where($db->quoteName('catid') . ' = :catid')
+				->bind(':catid', $subCatId);
+
+			return;
+		}
+
+		// Single category, lax (subcategories inclusive) filtering
+		if (!is_array($subCatId) && !$strict)
+		{
+			$subCat    = (new Category())->get($subCatId);
+			$subCatLft = $subCat?->lft;
+			$subCatLft = $subCatLft ?: -1;
+			$subQuery  = $db->getQuery(true)
+				->select('1')
+				->from($db->quoteName('#__categories', 'fcat'))
+				->where($db->quoteName('fcat.id') . ' = ' . $db->quoteName('c.catid'))
+				->extendWhere(
+					'AND',
+					[
+						$db->quoteName('catid') . ' = ' . $db->quote((int) $subCatId),
+						$db->quoteName('lft') . ' > ' . $db->quote((int) $subCatLft),
+					],
+					'OR'
+				);
+
+			$query->where('EXISTS(' . $subQuery . ')');
+
+			return;
+		}
+
+		// Multiple categories, strict filtering
+		if (!is_array($subCatId) && $strict)
+		{
+			$subCatId        = ArrayHelper::toInteger($subCatId);
+			$subCatId        = array_filter($subCatId);
+			$subCatLftValues = array_filter(
+				array_unique(
+					array_map(
+						function ($id) {
+							$subCat = (new Category())->get($id);
+							$lft    = $subCat?->lft;
+							$lft    = $lft ?: null;
+						},
+						$subCatId
+					)
+				)
+			);
+
+			if (empty($subCatLftValues))
+			{
+				$subCatLftValues = [0];
+			}
+
+			foreach ($subCatLftValues as $subCatLft)
+			{
+				$subQuery = $db->getQuery(true)
+					->select('1')
+					->from($db->quoteName('#__categories', 'fcat'))
+					->where($db->quoteName('fcat.id') . ' = ' . $db->quoteName('c.catid'))
+					->extendWhere(
+						'AND',
+						[
+							$db->quoteName('catid') . ' = ' . $db->quote((int) $subCatId),
+							$db->quoteName('lft') . ' > ' . $db->quote((int) $subCatLft),
+						],
+						'OR'
+					);
+
+				$query->where('EXISTS(' . $subQuery . ')');
+			}
+
+			return;
+		}
+
+		// Multiple categories, lax (subcategories inclusive) filtering
+		$subCatId = ArrayHelper::toInteger($subCatId);
+		$subCatId = array_filter($subCatId);
+		$query->whereIn($db->quoteName('catid'), $subCatId);
+	}
+
+	/**
+	 * Apply filtering by tag
+	 *
+	 * @param   int|int[]       $tags   The tag IDs to filter by
+	 * @param   QueryInterface  $query  The query to apply filtering to
+	 *
+	 * @since   1.0.0
+	 */
+	private function filterByTag(int|array $tags, QueryInterface $query): void
+	{
+		$db   = $this->getDatabase();
+		$tags = is_array($tags) ? $tags : explode(',', $tags);
+		$tags = ArrayHelper::toInteger($tags);
+
+		// Unfortunately, you cannot use whereIn in subqueries, so we have to fake it. Boo.
+		$tags = implode(',', array_map([$db, 'quote'], $tags));
+
+		$subQuery = $db->getQuery(true)
+			->select('1')
+			->from($db->quoteName('#__contentitem_tag_map', 't'))
+			->where($db->quoteName('t.type_alias') . ' = ' . $db->quote('com_content.article'))
+			->where($db->quoteName('t.tag_id') . ' IN(' . $tags . ')')
+			->where($db->quoteName('t.content_item_id') . ' = ' . $db->quoteName('c.id'));
+		$query->where('EXISTS(' . $subQuery . ')');
+	}
+
+	/**
+	 * Apply filtering by custom field
+	 *
+	 * @param   object          $field  The field definition
+	 * @param   array           $value  The field value to filter by
+	 * @param   QueryInterface  $query  The query to apply filtering to
+	 *
+	 * @since   1.0.0
+	 */
+	private function filterByCustomField(object $field, array $value, QueryInterface $query): void
+	{
+		$db       = $this->getDatabase();
+		$tableKey = 'fv' . $field->id;
+		$fieldId  = isset($field->parent_field_id) && !empty($field->parent_field_id)
+			? $field->parent_field_id
+			: $field->id;
+
+		$subQuery = $db->getQuery(true)
+			->select('1')
+			->from($db->quoteName('#__fields_values', $tableKey))
+			->where($db->quoteName('c.id') . ' = ' . $db->quoteName($tableKey . '.item_id'))
+			->where($db->quoteName($tableKey . '.field_id') . ' = ' . $db->quote($fieldId));
+
+		if (isset($field->parent_field_id) && !empty($field->parent_field_id))
+		{
+			/**
+			 * Subform field. look for "field123":"value"
+			 *
+			 * In case of multiple values we need to apply inclusive disjunction (OR) across all constituent values.
+			 * Since the LIKE operator does not have an inclusive disjunction form (in the way that the equals
+			 * operator has that in the form of IN) we have to use extendWhere() with its third parameter set to OR.
+			 *
+			 * Externally, the value clause is conjunctive (AND) to the rest of the conditions, hence the use of
+			 * 'AND' as the first argument to extendWhere().
+			 */
+			$conditions = array_map(
+				fn($wrappedvalue) => $db->quoteName($tableKey . '.value') . ' LIKE ' . $db->quote($wrappedvalue),
+				array_map(
+					fn($v) => '%' . trim(json_encode(['field' . $field->id => $v]), '{}') . '%',
+					$value
+				)
+			);
+
+			$subQuery->extendWhere('AND', $conditions, 'OR');
+		}
+		else
+		{
+			/**
+			 * Whole field value.
+			 *
+			 * The condition is externally conjunctive and internally inclusively disjunctive. We use IN() to
+			 * denote inclusive disjunction instead of multiple WHERE clauses for better performance. Externally,
+			 * where() uses the 'AND' operator making it conjunctive.
+			 */
+			$value = array_map([$db, 'quote'], $value);
+			$subQuery->where($db->quoteName($tableKey . '.value') . ' IN(' . implode(',', $value) . ')');
+		}
+
+		$query->where('EXISTS(' . $subQuery . ')');
 	}
 }
