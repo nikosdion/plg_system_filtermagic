@@ -51,8 +51,9 @@ class SubcategoryField extends ListField
 			$filters['filter.published'] = explode(',', $published);
 		}
 
-		if ($language)
-		{
+		if ($language === 'auto') {
+			$filters['filter.language'] = Factory::getApplication()->getLanguage()->getTag();
+		} elseif ($language) {
 			$filters['filter.language'] = explode(',', $language);
 		}
 
