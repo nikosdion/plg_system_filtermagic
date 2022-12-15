@@ -101,11 +101,14 @@ class SubcategoryField extends ListField
 		if (isset($filters['filter.root']))
 		{
 			$subQuery = $db->getQuery(true)
-				->select($db->quoteName('lft'))
-				->from($db->quoteName('#__categories'))
-				->where($db->quoteName('id') . ' = ' . $db->quote((int) $filters['filter.root']));
+				->select('1')
+				->from($db->quoteName('#__categories', 'searchCat'))
+				->where($db->quoteName('searchCat.id') . ' = ' . $db->quote((int) $filters['filter.root']))
+				->where($db->quoteName('a.lft') . ' > ' . $db->quoteName('searchCat.lft'))
+				->where($db->quoteName('a.rgt') . ' < ' . $db->quoteName('searchCat.rgt'))
+			;
 
-			$query->where($db->quoteName('lft') . ' > (' . $subQuery . ')');
+			$query->where('EXISTS(' . $subQuery . ')');
 		}
 		else
 		{
