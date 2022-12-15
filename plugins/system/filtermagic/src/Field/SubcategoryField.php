@@ -5,15 +5,9 @@
  * @license   GNU General Public License version 3, or later
  */
 
-/**
- * @package     Dionysopoulos\Plugin\System\FilterMagic\Field
- * @subpackage
- *
- * @copyright   A copyright
- * @license     A "Slug" license name e.g. GPL2
- */
-
 namespace Dionysopoulos\Plugin\System\FilterMagic\Field;
+
+defined('_JEXEC') || die;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Form\Field\ListField;

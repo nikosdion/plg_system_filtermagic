@@ -57,7 +57,7 @@ A filter file is a standard Joomla XML form file with the filters inside the `<f
 
         <field
                 name="tag"
-                type="tag"
+                type="tags"
                 label="JTAG"
                 hint="JOPTION_SELECT_TAG"
                 multiple="false"
@@ -127,12 +127,14 @@ An empty selection with the (translated) label `JOPTION_SELECT_CATEGORY` is alwa
 
 It filters articles by their assigned tags.
 
+The `<form>` tag **MUST** have the `addfieldprefix="Dionysopoulos\Plugin\System\FilterMagic\Field"` attribute if you are using a tags filter.
+
 The tag filter MUST be named `tag` and has the following definition:
 
 ```xml
 <field
         name="tag"
-        type="tag"
+        type="tags"
         label="JTAG"
         hint="JOPTION_SELECT_TAG"
         multiple="false"
@@ -146,6 +148,8 @@ The tag filter MUST be named `tag` and has the following definition:
 You MUST include the `<option>` as shown above to be able to de-select this filter.
 
 Set `multiple="true"` to allow multiple tags to be selected.
+
+There is an optional attribute called `root`. If you only want to display tags nested under a specific tag, enter the tag's ID as its value. For example, to only display tags under the tag with ID 123 (but **NOT** tag 123), add `root="123"` to your field.
 
 ### Custom field filter
 

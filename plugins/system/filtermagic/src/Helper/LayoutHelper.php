@@ -7,6 +7,8 @@
 
 namespace Dionysopoulos\Plugin\System\FilterMagic\Helper;
 
+defined('_JEXEC') || die;
+
 use Joomla\CMS\Layout\FileLayout;
 use Joomla\Registry\Registry;
 
