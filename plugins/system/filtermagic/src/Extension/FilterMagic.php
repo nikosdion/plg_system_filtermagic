@@ -22,7 +22,6 @@ use Joomla\CMS\HTML\Registry;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Component\Content\Site\Model\ArticlesModel;
 use Joomla\Component\Content\Site\Model\CategoryModel;
-use Joomla\Component\Content\Site\Service\Category;
 use Joomla\Component\Fields\Administrator\Helper\FieldsHelper;
 use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\Query\QueryElement;
@@ -110,7 +109,7 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 		 */
 		$db    = $this->getDatabase();
 		$query = $db->getQuery(true)
-			->select($db->quoteName('id'))
+			->select($db->quoteName('c.id'))
 			->from($db->quoteName('#__content', 'c'));
 
 		// -- Filter by subcategory
@@ -633,7 +632,7 @@ PHP
 	private function filterBySubcategory(QueryInterface $query, int|array $subCatId): void
 	{
 		$db     = $this->getDatabase();
-		$strict = $this->params->get('category_strict', 1);
+		$strict = $this->params->get('category_strict', 1) == 1;
 
 		// Single category, strict filtering
 		if (!is_array($subCatId) && $strict)
@@ -647,75 +646,68 @@ PHP
 		// Single category, lax (subcategories inclusive) filtering
 		if (!is_array($subCatId) && !$strict)
 		{
-			$subCat    = (new Category())->get($subCatId);
-			$subCatLft = $subCat?->lft;
-			$subCatLft = $subCatLft ?: -1;
-			$subQuery  = $db->getQuery(true)
+			$subQuery = $db->getQuery(true)
 				->select('1')
 				->from($db->quoteName('#__categories', 'fcat'))
 				->where($db->quoteName('fcat.id') . ' = ' . $db->quoteName('c.catid'))
 				->extendWhere(
 					'AND',
 					[
-						$db->quoteName('catid') . ' = ' . $db->quote((int) $subCatId),
-						$db->quoteName('lft') . ' > ' . $db->quote((int) $subCatLft),
+						$db->quoteName('fcat.id') . ' = ' . $db->quote((int) $subCatId),
+						'(' .
+							$db->quoteName('cat.lft') . ' >= ' . $db->quoteName('fcat.lft') .
+						') AND (' .
+							$db->quoteName('cat.rgt') . ' <= ' . $db->quoteName('fcat.rgt') .
+						')'
 					],
-					'OR'
 				);
 
-			$query->where('EXISTS(' . $subQuery . ')');
+			$query
+				->leftJoin($db->quoteName('#__categories', 'cat'), $db->quoteName('c.catid') . ' = ' . $db->quoteName('cat.id'))
+				->where('EXISTS(' . $subQuery . ')');
 
 			return;
 		}
 
-		// Multiple categories, strict filtering
-		if (!is_array($subCatId) && $strict)
+		// Multiple categories. Convert to integers, filter out <= 0.
+		$subCatId = ArrayHelper::toInteger($subCatId);
+		$subCatId = array_filter($subCatId, fn($x) => $x > 0);
+
+		// Catch the case of no valid filters.
+		if (empty($subCatId))
 		{
-			$subCatId        = ArrayHelper::toInteger($subCatId);
-			$subCatId        = array_filter($subCatId);
-			$subCatLftValues = array_filter(
-				array_unique(
-					array_map(
-						function ($id) {
-							$subCat = (new Category())->get($id);
-							$lft    = $subCat?->lft;
-							$lft    = $lft ?: null;
-						},
-						$subCatId
-					)
-				)
+			return;
+		}
+
+		if ($strict)
+		{
+			// Multiple categories, strict (subcategories inclusive) filtering
+			$query->whereIn($db->quoteName('catid'), $subCatId);
+
+			return;
+		}
+
+		// Multiple categories, lax filtering
+		$subCatId = array_map([$db, 'quote'], $subCatId);
+		$subQuery = $db->getQuery(true)
+			->select('1')
+			->from($db->quoteName('#__categories', 'fcat'))
+			->where($db->quoteName('fcat.id') . ' = ' . $db->quoteName('c.catid'))
+			->extendWhere(
+				'AND',
+				[
+					$db->quoteName('fcat.id') . ' IN(' . implode(',', $subCatId) . ')',
+					'(' .
+					$db->quoteName('cat.lft') . ' >= ' . $db->quoteName('fcat.lft') .
+					') AND (' .
+					$db->quoteName('cat.rgt') . ' <= ' . $db->quoteName('fcat.rgt') .
+					')'
+				],
 			);
 
-			if (empty($subCatLftValues))
-			{
-				$subCatLftValues = [0];
-			}
-
-			foreach ($subCatLftValues as $subCatLft)
-			{
-				$subQuery = $db->getQuery(true)
-					->select('1')
-					->from($db->quoteName('#__categories', 'fcat'))
-					->where($db->quoteName('fcat.id') . ' = ' . $db->quoteName('c.catid'))
-					->extendWhere(
-						'AND',
-						[
-							$db->quoteName('catid') . ' = ' . $db->quote((int) $subCatId),
-							$db->quoteName('lft') . ' > ' . $db->quote((int) $subCatLft),
-						],
-						'OR'
-					);
-
-				$query->where('EXISTS(' . $subQuery . ')');
-			}
-
-			return;
-		}
-
-		// Multiple categories, lax (subcategories inclusive) filtering
-		$subCatId = ArrayHelper::toInteger($subCatId);
-		$subCatId = array_filter($subCatId);
-		$query->whereIn($db->quoteName('catid'), $subCatId);
+		$query
+			->leftJoin($db->quoteName('#__categories', 'cat'), $db->quoteName('c.catid') . ' = ' . $db->quoteName('cat.id'))
+			->where('EXISTS(' . $subQuery . ')');
 	}
 
 	/**
