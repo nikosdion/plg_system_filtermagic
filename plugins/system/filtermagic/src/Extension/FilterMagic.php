@@ -187,6 +187,8 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 			return;
 		}
 
+		$this->addJavaScript();
+
 		// Generate and output filter form
 		$ret = LayoutHelper::render(
 			'filtermagic.form',
@@ -437,21 +439,25 @@ PHP
 
 		// Get data from the request
 		$outerData = $app->input->getString('filtermagic') ?: [];
+		$reset     = is_array($outerData) ? ($outerData['reset'] ?? 0) : 0;
 		$innerData = is_array($outerData) ? ($outerData['filter'] ?? []) : [];
 		$data      = [];
 		$prefix    = 'filtermagic.' . $catId . '.';
 
 		// Process each field, adding options to custom field filters and collecting form data
-		foreach ($form->getGroup('filter') as $subkey => $field)
+		if (!$reset)
 		{
-			// Get the data from the request, falling back to the user state. Save to user state.
-			$datum = $innerData[$field->fieldname] ??
-				$app->getUserState($prefix . $subkey, '');
-			$app->setUserState($prefix . $subkey, $datum);
-			$data[$field->fieldname] = $datum;
-		}
+			foreach ($form->getGroup('filter') as $subkey => $field)
+			{
+				// Get the data from the request, falling back to the user state. Save to user state.
+				$datum = $innerData[$field->fieldname] ??
+					$app->getUserState($prefix . $subkey, '');
+				$app->setUserState($prefix . $subkey, $datum);
+				$data[$field->fieldname] = $datum;
+			}
 
-		$form->bind(['filter' => $data]);
+			$form->bind(['filter' => $data]);
+		}
 
 		return $this->forms[$catId] = $form;
 	}
@@ -795,5 +801,46 @@ PHP
 		}
 
 		$query->where('EXISTS(' . $subQuery . ')');
+	}
+
+	private function addJavaScript()
+	{
+		static $alreadyAdded = false;
+
+		if ($alreadyAdded)
+		{
+			return;
+		}
+
+		$alreadyAdded = true;
+
+		$js = <<< JS
+
+document.addEventListener('DOMContentLoaded', function () {
+   document.querySelectorAll('button.plgSystemFilterMagicClear')
+       .forEach(function(elButton) {
+           elButton.addEventListener('click', function (e) {
+               const elTarget = e.currentTarget;
+               var   formId = null;
+               try {
+                   formId = elTarget.dataset.form;
+               } catch (e) {
+                   return;
+               }
+               const elForm  = document.getElementById(formId);
+               const elReset = document.getElementById(formId + '_reset');
+               if (!elForm || !elReset) {
+                   return;
+               }
+               elReset.value = 1;
+               elForm.submit();
+           })
+       }) 
+});
+JS;
+
+		/** @var \Joomla\CMS\Document\HtmlDocument $doc */
+		$doc = $this->getApplication()->getDocument();
+		$doc->getWebAssetManager()->addInlineScript($js);
 	}
 }
