@@ -24,6 +24,7 @@ use Joomla\Component\Content\Site\Model\ArticlesModel;
 use Joomla\Component\Content\Site\Model\CategoryModel;
 use Joomla\Component\Fields\Administrator\Helper\FieldsHelper;
 use Joomla\Database\DatabaseAwareTrait;
+use Joomla\Database\ParameterType;
 use Joomla\Database\Query\QueryElement;
 use Joomla\Database\QueryInterface;
 use Joomla\Event\Event;
@@ -39,6 +40,8 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 	private array $forms = [];
 
 	private array $flatFields = [];
+
+	private bool $useMySQLJson = true;
 
 	/**
 	 * Returns an array of events this subscriber will listen to.
@@ -745,13 +748,13 @@ PHP
 	/**
 	 * Apply filtering by custom field
 	 *
-	 * @param   object          $field  The field definition
-	 * @param   array           $value  The field value to filter by
-	 * @param   QueryInterface  $query  The query to apply filtering to
+	 * @param   object          $field         The field definition
+	 * @param   array           $searchValues  The field value to filter by
+	 * @param   QueryInterface  $query         The query to apply filtering to
 	 *
 	 * @since   1.0.0
 	 */
-	private function filterByCustomField(object $field, array $value, QueryInterface $query): void
+	private function filterByCustomField(object $field, array $searchValues, QueryInterface $query): void
 	{
 		$db       = $this->getDatabase();
 		$tableKey = 'fv' . $field->id;
@@ -768,7 +771,7 @@ PHP
 		if (isset($field->parent_field_id) && !empty($field->parent_field_id))
 		{
 			/**
-			 * Subform field. look for "field123":"value"
+			 * Subform field.
 			 *
 			 * In case of multiple values we need to apply inclusive disjunction (OR) across all constituent values.
 			 * Since the LIKE operator does not have an inclusive disjunction form (in the way that the equals
@@ -777,13 +780,30 @@ PHP
 			 * Externally, the value clause is conjunctive (AND) to the rest of the conditions, hence the use of
 			 * 'AND' as the first argument to extendWhere().
 			 */
-			$conditions = array_map(
-				fn($wrappedvalue) => $db->quoteName($tableKey . '.value') . ' LIKE ' . $db->quote($wrappedvalue),
-				array_map(
-					fn($v) => '%' . trim(json_encode(['field' . $field->id => $v]), '{}') . '%',
-					$value
-				)
-			);
+			if ($this->useMySQLJson)
+			{
+				$conditions = array_map(
+					// JSON_SEARCH(value, 'one', 'my_search_value') LIKE "%.field41%"
+					fn($v) => sprintf(
+						"JSON_SEARCH(%s, 'one', %s) LIKE %s",
+						$db->quoteName($tableKey . '.value'),
+						$db->quote($v),
+						$db->quote('%.field' . $field->id . '%')
+					),
+					$searchValues
+				);
+			}
+			else
+			{
+				// Look for "field123":"value"
+				$conditions = array_map(
+					fn($wrappedvalue) => $db->quoteName($tableKey . '.value') . ' LIKE ' . $db->quote($wrappedvalue),
+					array_map(
+						fn($v) => '%' . trim(json_encode(['field' . $field->id => $v]), '{}') . '%',
+						$searchValues
+					)
+				);
+			}
 
 			$subQuery->extendWhere('AND', $conditions, 'OR');
 		}
@@ -795,9 +815,11 @@ PHP
 			 * The condition is externally conjunctive and internally inclusively disjunctive. We use IN() to
 			 * denote inclusive disjunction instead of multiple WHERE clauses for better performance. Externally,
 			 * where() uses the 'AND' operator making it conjunctive.
+			 *
+			 * Note that we **cannot** use whereIn() because the prepared statement value replacement doesn't work.
 			 */
-			$value = array_map([$db, 'quote'], $value);
-			$subQuery->where($db->quoteName($tableKey . '.value') . ' IN(' . implode(',', $value) . ')');
+			$searchValues = array_map([$db, 'quote'], $searchValues);
+			$subQuery->where($db->quoteName($tableKey . '.value') . ' IN(' . implode(',', $searchValues) . ')');
 		}
 
 		$query->where('EXISTS(' . $subQuery . ')');
