@@ -175,7 +175,7 @@ class FilterMagic extends CMSPlugin implements SubscriberInterface
 		 * @var CategoryNode $item
 		 * @var Registry     $params
 		 */
-		[$context, $item, $params,] = $event->getArguments();
+		[$context, $item, $params,] = array_values($event->getArguments());
 
 		if ($context !== 'com_content.categories')
 		{
