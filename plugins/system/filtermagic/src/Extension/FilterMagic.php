@@ -24,7 +24,6 @@ use Joomla\Component\Content\Site\Model\ArticlesModel;
 use Joomla\Component\Content\Site\Model\CategoryModel;
 use Joomla\Component\Fields\Administrator\Helper\FieldsHelper;
 use Joomla\Database\DatabaseAwareTrait;
-use Joomla\Database\ParameterType;
 use Joomla\Database\Query\QueryElement;
 use Joomla\Database\QueryInterface;
 use Joomla\Event\Event;
@@ -460,6 +459,13 @@ PHP
 			}
 
 			$form->bind(['filter' => $data]);
+		}
+		else
+		{
+			foreach ($form->getGroup('filter') as $subkey => $field)
+			{
+				$app->setUserState($prefix . $subkey, null);
+			}
 		}
 
 		return $this->forms[$catId] = $form;
